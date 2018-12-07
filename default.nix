@@ -9,6 +9,10 @@ let
                       else pkgs.haskell.packages.${compiler};
 
   drv = haskellPackages.callPackage ./applied-fp-course.nix {};
+  drvWithTools = pkgs.haskell.lib.addBuildDepends drv [
+    pkgs.cabal-install
+    pkgs.sqlite
+  ];
 
 in
-  if pkgs.lib.inNixShell then drv.env else drv
+  if pkgs.lib.inNixShell then drvWithTools.env else drv
