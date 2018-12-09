@@ -10,13 +10,14 @@ import           Network.HTTP.Types       (Status, hContentType, status200,
                                            status400, status404)
 
 import qualified Data.ByteString.Lazy     as LBS
+import Data.ByteString.Lazy.Char8         (pack)
 
 import           Data.Either              (either)
 
 import           Data.Text                (Text)
 import           Data.Text.Encoding       (decodeUtf8)
 
-import           Level02.Types            (ContentType, Error, RqType,
+import           Level02.Types           (ContentType(..), Error(..), RqType(..),
                                            mkCommentText, mkTopic,
                                            renderContentType)
 
@@ -30,29 +31,25 @@ mkResponse
   -> ContentType
   -> LBS.ByteString
   -> Response
-mkResponse =
-  error "mkResponse not implemented"
+mkResponse s ct = responseLBS s [("Content-Type", renderContentType ct)]
 
 resp200
   :: ContentType
   -> LBS.ByteString
   -> Response
-resp200 =
-  error "resp200 not implemented"
+resp200 = mkResponse status200
 
 resp404
   :: ContentType
   -> LBS.ByteString
   -> Response
-resp404 =
-  error "resp404 not implemented"
+resp404 = mkResponse status404
 
 resp400
   :: ContentType
   -> LBS.ByteString
   -> Response
-resp400 =
-  error "resp400 not implemented"
+resp400 = mkResponse status400
 
 -- |----------------------------------------------------------------------------------
 -- These next few functions will take raw request information and construct         --
@@ -68,8 +65,7 @@ mkAddRequest
   :: Text
   -> LBS.ByteString
   -> Either Error RqType
-mkAddRequest =
-  error "mkAddRequest not implemented"
+mkAddRequest t ct = AddRq <$> mkTopic t <*> mkCommentText (lazyByteStringToStrictText ct)
   where
     -- This is a helper function to assist us in going from a Lazy ByteString, to a Strict Text
     lazyByteStringToStrictText =
@@ -78,13 +74,11 @@ mkAddRequest =
 mkViewRequest
   :: Text
   -> Either Error RqType
-mkViewRequest =
-  error "mkViewRequest not implemented"
+mkViewRequest = (ViewRq <$>) . mkTopic
 
 mkListRequest
   :: Either Error RqType
-mkListRequest =
-  error "mkListRequest not implemented"
+mkListRequest = pure ListRq
 
 -- |----------------------------------
 -- end of RqType creation functions --
@@ -93,8 +87,9 @@ mkListRequest =
 mkErrorResponse
   :: Error
   -> Response
-mkErrorResponse =
-  error "mkErrorResponse not implemented"
+mkErrorResponse EmptyTopic = resp404 Plain "Topic was not found"
+mkErrorResponse EmptyComment = resp400 Plain "Comments can not be empty"
+mkErrorResponse NotFound = resp404 Plain "Resource not found"
 
 -- | Use our ``RqType`` helpers to write a function that will take the input
 -- ``Request`` from the Wai library and turn it into something our application
@@ -102,10 +97,16 @@ mkErrorResponse =
 mkRequest
   :: Request
   -> IO ( Either Error RqType )
-mkRequest =
+mkRequest req = case (requestMethod req, pathInfo req) of
+  ("POST", [t, "add"]) -> getCommentFromRequest t
+  ("GET", [t, "view"]) -> pure $ mkViewRequest t
+  ("GET", ["list"]) -> pure $ mkListRequest
+  _ -> pure $ Left NotFound
+  where
+    getCommentFromRequest t = mkAddRequest t <$> strictRequestBody req
+
   -- Remembering your pattern-matching skills will let you implement the entire
   -- specification in this function.
-  error "mkRequest not implemented"
 
 -- | If we find that we need more information to handle a request, or we have a
 -- new type of request that we'd like to handle then we update the ``RqType``
@@ -118,17 +119,26 @@ mkRequest =
 -- For now, return a made-up value for each of the responses as we don't have
 -- any persistent storage. Plain text responses that contain "X not implemented
 -- yet" should be sufficient.
+
+toByteString :: Show a => a -> LBS.ByteString
+toByteString = pack . show
+
 handleRequest
   :: RqType
   -> Either Error Response
-handleRequest =
-  error "handleRequest not implemented"
+handleRequest r@(AddRq _ _) = pure $
+  resp200 Plain ("Adding comments not implemented yet. " <> toByteString r)
+handleRequest r@(ViewRq _) = pure $
+  resp200 Plain ("viewing topics not implemented yet. " <> toByteString r)
+handleRequest ListRq = pure $
+  resp200 Plain "listing topics not implemented yet"
 
 -- | Reimplement this function using the new functions and ``RqType`` constructors as a guide.
 app
   :: Application
-app =
-  error "app not reimplemented"
+app r cb = do
+  request <- mkRequest r
+  cb $ either mkErrorResponse id (handleRequest =<< request)
 
 runApp :: IO ()
 runApp = run 3000 app
