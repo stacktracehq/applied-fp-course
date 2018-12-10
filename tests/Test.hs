@@ -25,12 +25,13 @@ module Main where
 
 -- | 'tasty' takes care of managing all of our test cases, running them,
 -- checking results and then providing us with a report.
-import           Test.Tasty         (defaultMain, testGroup)
+import           Test.Tasty         (defaultMain, testGroup, TestTree)
 
 -- | 'tasty-wai' makes it easier to create requests to submit to our
 -- application, and provides some helper functions for checking our assertions.
-import           Test.Tasty.Wai     (assertBody, assertStatus', get, post,
-                                     testWai)
+import           Test.Tasty.Wai     (assertBody, assertBodyContains, assertStatus', assertContentType, get, post, testWai)
+import           Test.Tasty.HUnit     (assertBool, testCase, (@?=))
+import           Level02.Types (mkTopic, mkCommentText, getTopic, getCommentText, Error(..))
 
 -- | For running unit tests for individual functions, we have included the
 -- 'tasty-hunit' package. More information is available on the Hackage page:
@@ -45,15 +46,59 @@ import           Network.HTTP.Types as HTTP
 -- you move forward, come back and import your latest 'Application' so that you
 -- can test your work as you progress.
 import qualified Level02.Core       as Core
+domainTypesTests :: TestTree
+domainTypesTests = testGroup "domain types tests"
+  [
+    testCase "mkTopic with empty text is a failure" $
+      mkTopic "" @?= Left EmptyTopic
 
-main :: IO ()
-main = defaultMain $ testGroup "Applied FP Course - Tests"
+  , testCase "mkComment with empty text is a failure" $
+      mkCommentText "" @?= Left EmptyComment
 
-  [ testWai Core.app "List Topics" $
-      get "fudge/view" >>= assertStatus' HTTP.status200
+  , testCase "mkTopic with text makes a topic" $
+      getTopic <$> mkTopic "fudge" @?= Right "fudge"
 
-  , testWai Core.app "Empty Input" $ do
+  , testCase "mkCommentText with text makes a comment" $
+      getCommentText <$> mkCommentText "i like fudge!" @?= Right "i like fudge!"
+  ]
+
+waiTests :: TestTree
+waiTests = testGroup "wai tests"
+  [
+    testWai Core.app "Root path returns 404" $
+      get "/" >>= assertStatus' HTTP.status404
+
+  , testWai Core.app "Non-handled path returns 404" $
+      get "/foo/bar" >>= assertStatus' HTTP.status404
+
+  , testWai Core.app "Specifying empty topic returns 404" $ do
+      resp <- post "//add" "Comment"
+      assertStatus' HTTP.status404 resp
+      assertBody "Topic was not found" resp
+
+  , testWai Core.app "Adding empty comment returns 400" $ do
       resp <- post "fudge/add" ""
       assertStatus' HTTP.status400 resp
-      assertBody "Empty Comment Text" resp
+      assertBody "Comments can not be empty" resp
+
+  , testWai Core.app "Listing topics returns 200" $ do
+      resp <- get "list"
+      assertStatus' HTTP.status200 resp
+
+  , testWai Core.app "Viewing a topic returns 200" $ do
+      resp <- get "fudge/view"
+      assertStatus' HTTP.status200 resp
+      assertContentType "text/plain" resp
+
+  , testWai Core.app "Adding non-empty comment succeeds with 200" $ do
+      resp <- post "fudge/add" "this is a comment"
+      assertStatus' HTTP.status200 resp
+      assertBodyContains "fudge" resp
   ]
+
+main :: IO ()
+main = defaultMain $ testGroup "Applied FP Course - Tests" [
+    waiTests, domainTypesTests
+  ]
+
+
