@@ -27,10 +27,12 @@ module Level06.Types
   , renderContentType
   , confPortToWai
   , fromDBComment
+  , partialConfDecoder
   ) where
 
 import           GHC.Word                           (Word16)
 
+import Control.Exception (IOException)
 import           Data.ByteString                    (ByteString)
 import           Data.Text                          (Text, pack)
 
@@ -66,6 +68,7 @@ import           Level06.Types.CommentText          (CommentText,
 import           Level06.Types.Error                (Error (..))
 import           Level06.Types.Topic                (Topic, encodeTopic,
                                                      getTopic, mkTopic)
+import Data.Functor.Alt ((<!>))
 
 newtype CommentId = CommentId Int
   deriving Show
@@ -121,10 +124,12 @@ data RqType
   = AddRq Topic CommentText
   | ViewRq Topic
   | ListRq
+  deriving Show
 
 data ContentType
   = PlainText
   | JSON
+  deriving Show
 
 renderContentType
   :: ContentType
@@ -154,7 +159,7 @@ newtype DBFilePath = DBFilePath
 -- Add some fields to the ``Conf`` type:
 -- - A customisable port number: ``Port``
 -- - A filepath for our SQLite database: ``DBFilePath``
-data Conf = Conf
+data Conf = Conf { confPort :: Port, confDBPath :: DBFilePath }
 
 -- We're storing our Port as a Word16 to be more precise and prevent invalid
 -- values from being used in our application. However Wai is not so stringent.
@@ -169,14 +174,15 @@ data Conf = Conf
 confPortToWai
   :: Conf
   -> Int
-confPortToWai =
-  error "confPortToWai not implemented"
+confPortToWai = fromIntegral . getPort . confPort
 
 -- Similar to when we were considering our application types. We can add to this sum type as we
 -- build our application and the compiler can help us out.
 data ConfigError
   = BadConfFile DecodeError
-  deriving Show
+  | MissingConfFile FilePath IOException
+  | RequiredConfigFieldMissing Text
+  deriving (Show, Eq)
 
 -- Our application will be able to load configuration from both a file and
 -- command line input. We want to be able to use the command line to temporarily
@@ -205,15 +211,15 @@ data ConfigError
 data PartialConf = PartialConf
   { pcPort       :: Last Port
   , pcDBFilePath :: Last DBFilePath
-  }
+  } deriving (Show, Eq)
 
 -- Before we can define our ``Monoid`` instance for ``PartialConf``, we'll have
 -- to define a Semigroup instance. We define our ``(<>)`` function to lean
 -- on the ``Semigroup`` instance for Last to always get the last value.
 instance Semigroup PartialConf where
   _a <> _b = PartialConf
-    { pcPort       = error "pcPort (<>) not implemented"
-    , pcDBFilePath = error "pcDBFilePath (<>) not implemented"
+    { pcPort       = (pcPort _a) <> (pcPort _b)
+    , pcDBFilePath = (pcDBFilePath _a) <> (pcDBFilePath _b)
     }
 
 -- We now define our ``Monoid`` instance for ``PartialConf``. Allowing us to
@@ -231,8 +237,20 @@ instance Monoid PartialConf where
 -- For reading the configuration from the file, we're going to use the Waargonaut
 -- library to handle the parsing and decoding for us. In order to do this, we
 -- have to tell waargonaut how to go about converting the JSON into our PartialConf
--- data structure.
+
+portDecoder :: Monad f => Decoder f (Maybe Port)
+portDecoder = D.maybeOrNull (Port <$> D.integral)
+
+dbFilePathDecoder :: Monad f => Decoder f (Maybe DBFilePath)
+dbFilePathDecoder = D.maybeOrNull (DBFilePath <$> D.string)
+
+decodeLastAtKey :: Monad f => Text -> Decoder f (Maybe a) -> Decoder f (Last a)
+decodeLastAtKey key decoder = (Last <$> D.atKey key decoder) <!> pure mempty
+
 partialConfDecoder :: Monad f => Decoder f PartialConf
-partialConfDecoder = error "PartialConf Decoder not implemented"
+partialConfDecoder =
+  PartialConf
+  <$> decodeLastAtKey "port" portDecoder
+  <*> decodeLastAtKey "dbName" dbFilePathDecoder
 
 -- Go to 'src/Level06/Conf/File.hs' next

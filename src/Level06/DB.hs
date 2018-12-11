@@ -26,11 +26,11 @@ import           Database.SQLite.SimpleErrors.Types (SQLiteResponse)
 
 import           Level06.AppM                       (App, liftEither)
 
-import           Level06.Types                      (Comment, CommentText,
+import           Level06.Types                      (Comment, DBFilePath, CommentText,
                                                      Error (DBError), Topic,
                                                      fromDBComment,
                                                      getCommentText, getTopic,
-                                                     mkTopic)
+                                                     mkTopic, getDBFilePath)
 
 -- We have a data type to simplify passing around the information we need to run
 -- our database queries. This also allows things to change over time without
@@ -48,13 +48,13 @@ closeDB =
   Sql.close . dbConn
 
 initDB
-  :: FilePath
+  :: DBFilePath
   -> IO ( Either SQLiteResponse FirstAppDB )
 initDB fp = Sql.runDBAction $ do
   -- Initialise the connection to the DB...
   -- - What could go wrong here?
   -- - What haven't we be told in the types?
-  con <- Sql.open fp
+  con <- Sql.open $ getDBFilePath fp
   -- Initialise our one table, if it's not there already
   _ <- Sql.execute_ con createTableQ
   pure $ FirstAppDB con

@@ -2,13 +2,14 @@
 module Level06.Conf.File where
 
 import           Data.ByteString            (ByteString)
+import qualified Data.ByteString.Char8 as C8
 
 import           Data.Text                  (Text, pack)
 
 import           Data.Bifunctor             (first)
 import           Data.Monoid                (Last (Last))
 
-import           Control.Exception          (try)
+import           Control.Exception          (try, IOException)
 
 import qualified Data.Attoparsec.ByteString as AB
 
@@ -16,8 +17,9 @@ import           Waargonaut                 (Json, parseWaargonaut)
 import qualified Waargonaut.Decode          as D
 import           Waargonaut.Decode.Error    (DecodeError (ParseFailed))
 
-import           Level06.Types              (ConfigError (BadConfFile),
-                                             PartialConf (PartialConf))
+import Level06.AppM
+import           Level06.Types              (ConfigError(..),
+                                             PartialConf (PartialConf), partialConfDecoder)
 -- $setup
 -- >>> :set -XOverloadedStrings
 
@@ -34,18 +36,22 @@ import           Level06.Types              (ConfigError (BadConfFile),
 readConfFile
   :: FilePath
   -> IO (Either ConfigError ByteString)
-readConfFile =
-  error "readConfFile not implemented"
+readConfFile fp = mapError <$> try readByteStringFromFile
+  where
+    readByteStringFromFile = C8.pack <$> readFile fp
+    mapError = first (MissingConfFile fp)
+
+parseFunc :: ByteString -> Either DecodeError Json
+parseFunc = first (ParseFailed . pack . show) . AB.parseOnly parseWaargonaut
 
 -- | Construct the function that will take a ``FilePath``, read it in, decode it,
 -- and construct our ``PartialConf``.
 parseJSONConfigFile
   :: FilePath
-  -> IO (Either ConfigError PartialConf)
-parseJSONConfigFile =
-  error "parseJSONConfigFile not implemented"
+  -> AppM ConfigError PartialConf
+parseJSONConfigFile fp = AppM $ (f =<<) <$> (readConfFile fp)
   where
-    parseFunc :: ByteString -> Either DecodeError Json
-    parseFunc = first (ParseFailed . pack . show) . AB.parseOnly parseWaargonaut
+    f bs = first mapError (D.simpleDecode partialConfDecoder parseFunc bs)
+    mapError = BadConfFile . fst
 
 -- Go to 'src/Level06/Conf.hs' next.

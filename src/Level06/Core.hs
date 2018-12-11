@@ -39,9 +39,9 @@ import           Level06.AppM                       (App, AppM (..),
                                                      liftEither, runApp)
 import qualified Level06.Conf                       as Conf
 import qualified Level06.DB                         as DB
-import           Level06.Types                      (Conf, ConfigError,
+import           Level06.Types                      (Conf(..), ConfigError,
                                                      ContentType (..),
-                                                     Error (..),
+                                                     Error (..), confPortToWai,
                                                      RqType (AddRq, ListRq, ViewRq),
                                                      encodeComment, encodeTopic,
                                                      mkCommentText, mkTopic,
@@ -56,7 +56,15 @@ data StartUpError
   deriving Show
 
 runApplication :: IO ()
-runApplication = error "copy your previous 'runApp' implementation and refactor as needed"
+runApplication = do
+  canStartApp <- runAppM $ prepareAppReqs
+  case canStartApp of
+    Left err ->
+      putStrLn $ "Error starting: " <> show err
+    Right prereqs ->
+      Ex.finally ((uncurry startApp) prereqs) (DB.closeDB $ snd prereqs)
+  where
+    startApp conf db = run (confPortToWai conf) (app conf db)
 
 -- | We need to complete the following steps to prepare our app requirements:
 --
@@ -71,7 +79,10 @@ runApplication = error "copy your previous 'runApp' implementation and refactor 
 -- up!
 --
 prepareAppReqs :: AppM StartUpError (Conf, DB.FirstAppDB)
-prepareAppReqs = error "copy your prepareAppReqs from the previous level."
+prepareAppReqs = do
+  conf <- first ConfErr (Conf.parseOptions "files/appconfig.json")
+  db <- first DBInitErr (AppM . DB.initDB $ confDBPath conf)
+  pure (conf, db)
 
 -- | Some helper functions to make our lives a little more DRY.
 mkResponse
