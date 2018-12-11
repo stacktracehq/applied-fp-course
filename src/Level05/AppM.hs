@@ -68,32 +68,42 @@ runAppM (AppM m) =
 
 instance Functor AppM where
   fmap :: (a -> b) -> AppM a -> AppM b
-  fmap = error "fmap for AppM not implemented"
+  fmap atob = AppM . (fmap . fmap) atob . runAppM
 
 instance Applicative AppM where
   pure :: a -> AppM a
-  pure  = error "pure for AppM not implemented"
+  pure = AppM . (pure . pure)
 
   (<*>) :: AppM (a -> b) -> AppM a -> AppM b
-  (<*>) = error "spaceship for AppM not implemented"
+  (<*>) appatob appa = AppM $ (<*>) <$> (runAppM appatob) <*> (runAppM appa)
+  -- f :: IO, g :: Either Error
+  -- runAppM appatob :: f (g (a -> b))
+  -- runAppM appa :: f (g a)
+  -- Applicative on the g
+  -- (<*>) :: Applicative g => g (a -> b) -> g a -> g b
+  -- (<*>) <$> :: f (g (a -> b)) -> f (g a -> g b)
+  -- (<*>) <$> (runAppM appatob) :: f (g a -> g b)
 
 instance Monad AppM where
   return :: a -> AppM a
-  return = error "return for AppM not implemented"
+  return = AppM . pure . pure
 
   (>>=) :: AppM a -> (a -> AppM b) -> AppM b
-  (>>=)  = error "bind for AppM not implemented"
+  (>>=) appa atoappb = AppM $ runAppM appa >>= run
+    where run = either (pure . Left) (runAppM . atoappb)
 
 instance MonadIO AppM where
   liftIO :: IO a -> AppM a
-  liftIO = error "liftIO for AppM not implemented"
+  liftIO = AppM . (Right <$>)
 
 instance MonadError Error AppM where
   throwError :: Error -> AppM a
-  throwError = error "throwError for AppM not implemented"
+  throwError = AppM . pure . Left
 
   catchError :: AppM a -> (Error -> AppM a) -> AppM a
-  catchError = error "catchError for AppM not implemented"
+  catchError appa catch = AppM $ runAppM appa >>= run
+    where
+      run = either (runAppM . catch) (pure . Right)
 
 -- This is a helper function that will `lift` an Either value into our new AppM
 -- by applying `throwError` to the Left value, and using `pure` to lift the
@@ -105,7 +115,6 @@ instance MonadError Error AppM where
 liftEither
   :: Either Error a
   -> AppM a
-liftEither =
-  error "liftEither not implemented"
+liftEither = either throwError pure
 
 -- Go to 'src/Level05/DB.hs' next.
