@@ -41,6 +41,7 @@ import           Level05.Types                      (ContentType (..),
                                                      encodeComment, encodeTopic,
                                                      mkCommentText, mkTopic,
                                                      renderContentType)
+import Data.Bifunctor (first)
 
 -- Our start-up is becoming more complicated and could fail in new and
 -- interesting ways. But we also want to be able to capture these errors in a
@@ -55,15 +56,14 @@ runApp = do
   cfgE <- prepareAppReqs
   -- Loading the configuration can fail, so we have to take that into account now.
   case cfgE of
-    Left err   ->
       -- We can't run our app at all! Display the message and exit the application.
-      undefined
+    Left err -> putStrLn "Can't run the app"
     Right cfg ->
       -- We have a valid config! We can now complete the various pieces needed to run our
       -- application. This function 'finally' will execute the first 'IO a', and then, even in the
       -- case of that value throwing an exception, execute the second 'IO b'. We do this to ensure
       -- that our DB connection will always be closed when the application finishes, or crashes.
-      Ex.finally (run undefined undefined) (DB.closeDB cfg)
+      Ex.finally (run 3000 (app cfg)) (DB.closeDB cfg)
 
 -- We need to complete the following steps to prepare our app requirements:
 --
@@ -74,8 +74,9 @@ runApp = do
 --
 prepareAppReqs
   :: IO ( Either StartUpError DB.FirstAppDB )
-prepareAppReqs =
-  error "copy your prepareAppReqs from the previous level."
+prepareAppReqs = do
+  db <- DB.initDB $ Conf.dbFilePath Conf.firstAppConfig
+  pure $ first DBInitErr db
 
 -- | Some helper functions to make our lives a little more DRY.
 mkResponse
@@ -129,8 +130,13 @@ resp200Json e =
 app
   :: DB.FirstAppDB
   -> Application
-app db rq cb =
-  error "app not reimplemented"
+app db rq cb = cb . handleRespErr =<< go
+  where
+    go = runAppM $ do
+      rqType <- mkRequest rq
+      handleRequest db rqType
+    handleRespErr :: Either Error Response -> Response
+    handleRespErr = either mkErrorResponse id
 
 handleRequest
   :: DB.FirstAppDB
