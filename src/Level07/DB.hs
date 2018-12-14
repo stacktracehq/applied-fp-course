@@ -10,7 +10,7 @@ module Level07.DB
   ) where
 
 import           Control.Monad.IO.Class             (liftIO)
-import           Control.Monad.Reader               (asks)
+import           Control.Monad.Reader               (asks, reader)
 
 import           Data.Bifunctor                     (first)
 import           Data.Text                          (Text)
@@ -25,7 +25,7 @@ import qualified Database.SQLite.Simple             as Sql
 import qualified Database.SQLite.SimpleErrors       as Sql
 import           Database.SQLite.SimpleErrors.Types (SQLiteResponse)
 
-import           Level07.AppM                      (App, Env (envDB))
+import           Level07.AppM                      (App, AppM(..), Env (envDB), liftEither)
 
 import           Level07.Types                     (Comment, CommentText,
                                                      DBFilePath (getDBFilePath),
@@ -62,38 +62,54 @@ initDB fp = Sql.runDBAction $ do
 
 getDBConn
   :: App Connection
-getDBConn =
-  error "getDBConn not implemented"
+getDBConn = reader (dbConn . envDB)
 
 runDB
   :: (a -> Either Error b)
   -> (Connection -> IO a)
   -> App b
-runDB =
-  error "runDB not re-implemented"
+runDB fromResult withConn = do
+  conn <- getDBConn
+  a <- liftIO $ withConn conn
+  liftEither $ fromResult a
 
 getComments
   :: Topic
   -> App [Comment]
-getComments =
-  error "Copy your completed 'getComments' and refactor to match the new type signature"
+getComments topic = runDB mapComment query
+  where
+    mapComment = traverse fromDBComment
+    query conn = Sql.query conn sql [getTopic topic]
+    sql = "SELECT id,topic,comment,time FROM comments WHERE topic = ?"
 
 addCommentToTopic
   :: Topic
   -> CommentText
   -> App ()
-addCommentToTopic =
-  error "Copy your completed 'appCommentToTopic' and refactor to match the new type signature"
+addCommentToTopic t ct = runDB pure query
+  where
+    sql = "INSERT INTO comments (topic,comment,time) VALUES (?,?,?)"
+    query conn = do
+      args <- getArgs
+      Sql.execute conn sql args
+    getArgs = do
+      currentTime <- getCurrentTime
+      pure (getTopic t, getCommentText ct, currentTime)
 
 getTopics
   :: App [Topic]
-getTopics =
-  error "Copy your completed 'getTopics' and refactor to match the new type signature"
+getTopics = runDB mapTopic query
+  where
+    sql = "SELECT DISTINCT topic FROM comments"
+    query conn = Sql.query_ conn sql :: IO [Sql.Only Text]
+    mapTopic = traverse (mkTopic . Sql.fromOnly)
 
 deleteTopic
   :: Topic
   -> App ()
-deleteTopic =
-  error "Copy your completed 'deleteTopic' and refactor to match the new type signature"
+deleteTopic t = runDB pure query
+  where
+    sql = "DELETE FROM comments WHERE topic = ?"
+    query conn = Sql.execute conn sql [getTopic t]
 
 -- Go on to 'src/Level07/Core.hs' next.
